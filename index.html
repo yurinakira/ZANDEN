@@ -847,7 +847,12 @@ function enterGame() {
   const gameSub = roomRef.on('value', snap => {
     GS = snap.val();
     if(!GS) return;
-    if(GS.status === 'ended') { showEndScreen(); return; }
+    if(GS.status === 'ended') {
+      // 全モーダルを閉じてリザルトへ
+      document.querySelectorAll('.modal-bg.open').forEach(m=>m.classList.remove('open'));
+      showEndScreen();
+      return;
+    }
     // Update myPlayerIdx
     const keys = sortedPlayerKeys(GS.players);
     myPlayerIdx = keys.indexOf(myPlayerId);
@@ -1248,13 +1253,32 @@ function openDistributeModal() {
 async function confirmDistribute() {
   const drawnActions = GS.drawnActions || [];
   const keys = sortedPlayerKeys(GS.players);
+
+  // 重複チェック：同じカードインデックスを2人以上に割り当てていないか
+  const usedIdx = Object.values(distributeSelections);
+  const hasDuplicate = usedIdx.length !== new Set(usedIdx).size;
+  if(hasDuplicate) {
+    toast('同じカードを複数人に割り当てることはできません', 'danger');
+    // 重複しているセルを赤くハイライト
+    const seen = {};
+    document.querySelectorAll('#dist-rows .dist-sel').forEach((sel,i) => {
+      const v = parseInt(sel.value);
+      sel.style.borderColor = seen[v] ? 'var(--danger)' : 'var(--muted)';
+      seen[v] = true;
+    });
+    return;
+  }
+
   const assignments = {};
   keys.forEach((_,i) => {
     const idx = distributeSelections[i] !== undefined ? distributeSelections[i] : 0;
     assignments[i] = drawnActions[idx] || drawnActions[0] || {type:'電池散策'};
   });
 
-  const aq = keys.map((_,i)=>i); // all player indices in order
+  // リーダーから時計回りの順番でキューを構成
+  const n = keys.length;
+  const aq = [];
+  for(let i=0;i<n;i++) aq.push((GS.leaderIdx + i) % n);
   await roomRef.update({ phase:6, assignments, actionQueue:aq, actionQueueIdx:0 });
   await addLog('リーダーがアクションカードを配布しました。', 'important');
   closeModal('dist-modal');
@@ -1276,32 +1300,62 @@ function openActionModal() {
   btns.innerHTML = '';
 
   if(myAc.type === '電池生産') {
-    content.innerHTML = `<p>電池生産ダイス（0〜5）を振り、出た目の枚数を山札から獲得します。</p>
-      <div class="num-row"><label>ダイスの出目（0〜5）：</label><input type="number" id="am-dice" min="0" max="5" value="0"></div>`;
+    content.innerHTML = `<p>電池生産ダイス（0〜5）を振ります。ボタンを押してダイスを振ってください。</p>
+      <div style="text-align:center; margin:16px 0;">
+        <div id="dice-face" style="font-size:64px; min-height:80px; line-height:80px;">🎲</div>
+        <div id="dice-val" style="font-family:Orbitron,monospace; font-size:28px; color:var(--accent2); margin-top:8px;">-</div>
+      </div>`;
+    let diceRolled1 = false;
+    let diceResult1 = 0;
+    addModalBtn(content,'🎲 ダイスを振る','btn-warn', ()=>{
+      const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
+      let count = 0;
+      const interval = setInterval(()=>{
+        const r = Math.floor(Math.random()*6);
+        document.getElementById('dice-face').textContent = faces[r];
+        count++;
+        if(count>12){ clearInterval(interval); diceResult1=r; document.getElementById('dice-val').textContent=r+'枚獲得'; diceRolled1=true; }
+      },80);
+    });
     addModalBtn(btns,'EXECUTE','btn-success',async()=>{
-      const n = Math.min(5,Math.max(0,parseInt(document.getElementById('am-dice').value)||0));
-      await drawAndGive(myPlayerId, n);
-      await addLog(`${myP.name} が電池生産ダイス${n} → ${n}枚獲得。`, 'important');
+      if(!diceRolled1){ toast('先にダイスを振ってください','warn'); return; }
+      await drawAndGive(myPlayerId, diceResult1);
+      await addLog(`${myP.name} が電池生産ダイス${diceResult1} → ${diceResult1}枚獲得。`, 'important');
       await advanceActionQueue();
       closeModal('action-modal');
     });
   }
   else if(myAc.type === '電池散策') {
-    content.innerHTML = `<p>電池散策ダイス（1〜3）を振り、出た目の枚数を山札から獲得します。</p>
-      <div class="num-row"><label>ダイスの出目（1〜3）：</label><input type="number" id="am-dice2" min="1" max="3" value="1"></div>`;
+    content.innerHTML = `<p>電池散策ダイス（1〜3）を振ります。ボタンを押してダイスを振ってください。</p>
+      <div style="text-align:center; margin:16px 0;">
+        <div id="dice-face2" style="font-size:64px; min-height:80px; line-height:80px;">🎲</div>
+        <div id="dice-val2" style="font-family:Orbitron,monospace; font-size:28px; color:var(--accent2); margin-top:8px;">-</div>
+      </div>`;
+    let diceRolled2 = false;
+    let diceResult2 = 1;
+    addModalBtn(content,'🎲 ダイスを振る','btn-warn', ()=>{
+      const faces = ['⚀','⚁','⚂'];
+      let count = 0;
+      const interval = setInterval(()=>{
+        const r = Math.floor(Math.random()*3)+1;
+        document.getElementById('dice-face2').textContent = faces[r-1];
+        count++;
+        if(count>12){ clearInterval(interval); diceResult2=r; document.getElementById('dice-val2').textContent=r+'枚獲得'; diceRolled2=true; }
+      },80);
+    });
     addModalBtn(btns,'EXECUTE','btn-success',async()=>{
-      const n = Math.min(3,Math.max(1,parseInt(document.getElementById('am-dice2').value)||1));
-      await drawAndGive(myPlayerId, n);
-      await addLog(`${myP.name} が電池散策ダイス${n} → ${n}枚獲得。`);
+      if(!diceRolled2){ toast('先にダイスを振ってください','warn'); return; }
+      await drawAndGive(myPlayerId, diceResult2);
+      await addLog(`${myP.name} が電池散策ダイス${diceResult2} → ${diceResult2}枚獲得。`);
       await advanceActionQueue();
       closeModal('action-modal');
     });
   }
   else if(myAc.type === '電力支援') {
     const targets = keys.filter(k=>k!==myPlayerId);
-    const fullCount = myHand.filter(c=>c.type==='full').length;
-    content.innerHTML = `<p>任意のプレイヤー1人に手札からフル電池カードを1〜3枚渡します。</p>
-      <p style="color:var(--text2);">あなたのフル電池：${fullCount}枚</p>`;
+    const totalCards = myHand.length;
+    content.innerHTML = `<p>任意のプレイヤー1人に手札から電池カード（種類問わず）を1〜3枚渡します。</p>
+      <p style="color:var(--text2);">あなたの手札：${totalCards}枚（フル⚡/空□/ウィルス☠ どれでも渡せます）</p>`;
     const grid = document.createElement('div');
     grid.className = 'sel-grid';
     let selectedTarget = null;
@@ -1318,75 +1372,146 @@ function openActionModal() {
       grid.appendChild(opt);
     });
     content.appendChild(grid);
-    content.innerHTML += `<div class="num-row"><label>渡す枚数（1〜3）：</label><input type="number" id="am-sup" min="1" max="3" value="1"></div>`;
+    // 手札を表示してクリックで選択
+    const selLabel = document.createElement('p');
+    selLabel.style.cssText='font-size:12px; color:var(--text2); margin:12px 0 6px;';
+    selLabel.textContent = '渡すカードを選択（1〜3枚）：';
+    content.appendChild(selLabel);
+    const handVis = document.createElement('div');
+    handVis.className = 'hand-cards';
+    const selectedForSupport = new Set();
+    myHand.forEach((c,i)=>{
+      const v = document.createElement('div');
+      const t = c.type;
+      v.className = `hcard ${t}`;
+      const icon = t==='full'?'⚡':t==='empty'?'□':'☠';
+      const label = t==='full'?'フル':t==='empty'?'空':'ウィルス';
+      v.innerHTML = `<div class="ci">${icon}</div><div>${label}</div>`;
+      v.onclick = ()=>{
+        if(selectedForSupport.has(i)){
+          selectedForSupport.delete(i);
+          v.classList.remove('selected');
+        } else if(selectedForSupport.size < 3){
+          selectedForSupport.add(i);
+          v.classList.add('selected');
+        } else { toast('最大3枚まで選択できます','warn'); }
+      };
+      handVis.appendChild(v);
+    });
+    content.appendChild(handVis);
     addModalBtn(btns,'EXECUTE','btn-success',async()=>{
       if(!selectedTarget) { toast('対象を選んでください','warn'); return; }
-      const cnt = Math.min(3,Math.max(1,parseInt(document.getElementById('am-sup').value)||1));
-      // Transfer full batteries from me to target
+      if(selectedForSupport.size===0) { toast('渡すカードを選んでください','warn'); return; }
       const snap = await roomRef.once('value');
       const room = snap.val();
-      const myHandNow = [...(room.players[myPlayerId]?.hand||[])];
+      let myHandNow = [...(room.players[myPlayerId]?.hand||[])];
       const tpHandNow = [...(room.players[selectedTarget]?.hand||[])];
-      let transferred = 0;
-      for(let i=myHandNow.length-1;i>=0&&transferred<cnt;i--) {
-        if(myHandNow[i].type==='full') {
-          tpHandNow.push(myHandNow.splice(i,1)[0]);
-          transferred++;
-        }
-      }
+      // 選択インデックスを降順で削除
+      const sortedIdx = [...selectedForSupport].sort((a,b)=>b-a);
+      sortedIdx.forEach(i=>{ tpHandNow.push(myHandNow.splice(i,1)[0]); });
       await roomRef.update({
         [`players/${myPlayerId}/hand`]: myHandNow,
         [`players/${selectedTarget}/hand`]: tpHandNow,
       });
       const tpName = room.players[selectedTarget]?.name||'?';
-      await addLog(`${myP.name} が ${tpName} にフル電池${transferred}枚を支援。`, 'important');
+      await addLog(`${myP.name} が ${tpName} に電池カード${sortedIdx.length}枚を支援。`, 'important');
       await advanceActionQueue();
       closeModal('action-modal');
     });
   }
   else if(myAc.type === '電力徴収') {
-    content.innerHTML = `<p>自分以外の全員の手札から電池カードを合計2枚取ります。</p>`;
+    const collectMap = {};
+    const targets = keys.filter(k => k !== myPlayerId);
+    targets.forEach(k => { collectMap[k] = 0; });
+
+    const updateRemain = () => {
+      const used = Object.values(collectMap).reduce((a,b)=>a+b,0);
+      const el = document.getElementById('levy-remain');
+      if(el) el.textContent = 2 - used;
+    };
+
+    content.innerHTML = '<p>自分以外の全員から合計2枚取ります。各プレイヤーの「＋」「－」で枚数を指定してください。</p>';
+
+    const totalLabel = document.createElement('div');
+    totalLabel.style.cssText = 'font-family:Orbitron,monospace; font-size:13px; color:var(--warn); margin-bottom:12px;';
+    totalLabel.innerHTML = '残り取得可能: <span id="levy-remain">2</span> 枚';
+    content.appendChild(totalLabel);
+
     const tableDiv = document.createElement('div');
-    const inpMap = {};
-    keys.forEach((k,i) => {
-      if(k===myPlayerId) return;
+    tableDiv.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
+
+    targets.forEach(k => {
       const tp = GS.players[k];
+      const handCount = (tp.hand||[]).length;
+
       const row = document.createElement('div');
-      row.style.cssText='display:flex; align-items:center; gap:12px; margin-bottom:8px;';
-      row.innerHTML = `<span style="flex:1; font-size:13px;">${esc(tp.name)} (手札${(tp.hand||[]).length}枚)</span>`;
-      const inp = document.createElement('input');
-      inp.type='number'; inp.min=0; inp.max=2; inp.value=0;
-      inp.style.cssText='background:var(--bg3); border:1px solid var(--muted); color:var(--text); padding:6px 10px; width:60px; text-align:center;';
-      row.appendChild(inp);
-      row.innerHTML += `<span style="font-size:11px; color:var(--text2);">枚取る</span>`;
-      row.appendChild(inp);
+      row.style.cssText = 'display:flex; align-items:center; gap:10px; background:var(--bg3); border:1px solid var(--muted); padding:10px 14px;';
+
+      const nameEl = document.createElement('span');
+      nameEl.style.cssText = 'flex:1; font-size:13px;';
+      nameEl.textContent = tp.name;
+
+      const handEl = document.createElement('span');
+      handEl.style.cssText = 'font-size:11px; color:var(--text2);';
+      handEl.textContent = '手札' + handCount + '枚';
+
+      const minusBtn = document.createElement('button');
+      minusBtn.className = 'btn btn-xs btn-danger';
+      minusBtn.textContent = '－';
+
+      const countEl = document.createElement('span');
+      countEl.style.cssText = 'font-family:Orbitron,monospace; font-size:18px; color:var(--accent2); min-width:24px; text-align:center;';
+      countEl.textContent = '0';
+
+      const plusBtn = document.createElement('button');
+      plusBtn.className = 'btn btn-xs btn-success';
+      plusBtn.textContent = '＋';
+
+      plusBtn.onclick = () => {
+        const used = Object.values(collectMap).reduce((a,b)=>a+b,0);
+        if(used >= 2) { toast('合計2枚が上限です','warn'); return; }
+        if(collectMap[k] >= handCount) { toast('相手の手札枚数が上限です','warn'); return; }
+        collectMap[k]++;
+        countEl.textContent = collectMap[k];
+        updateRemain();
+      };
+      minusBtn.onclick = () => {
+        if(collectMap[k] <= 0) return;
+        collectMap[k]--;
+        countEl.textContent = collectMap[k];
+        updateRemain();
+      };
+
+      row.appendChild(nameEl);
+      row.appendChild(handEl);
+      row.appendChild(minusBtn);
+      row.appendChild(countEl);
+      row.appendChild(plusBtn);
       tableDiv.appendChild(row);
-      inpMap[k] = inp;
     });
     content.appendChild(tableDiv);
+
     addModalBtn(btns,'EXECUTE','btn-success',async()=>{
-      let total = 0;
-      Object.values(inpMap).forEach(inp=>total+=parseInt(inp.value)||0);
-      if(total!==2) { toast('合計2枚にしてください','warn'); return; }
+      const total = Object.values(collectMap).reduce((a,b)=>a+b,0);
+      if(total !== 2) { toast('合計2枚にしてください（現在' + total + '枚）','warn'); return; }
       const snap = await roomRef.once('value');
       const room = snap.val();
       const updates = {};
       let myHandNow = [...(room.players[myPlayerId]?.hand||[])];
-      let logParts = [];
-      for(const [k,inp] of Object.entries(inpMap)) {
-        const n = parseInt(inp.value)||0;
-        if(n===0) continue;
+      const logParts = [];
+      for(const [k, n] of Object.entries(collectMap)) {
+        if(n === 0) continue;
         const tp = room.players[k];
         const tpHand = [...(tp?.hand||[])];
         for(let i=0;i<n;i++) {
           if(tpHand.length>0) myHandNow.push(tpHand.splice(Math.floor(Math.random()*tpHand.length),1)[0]);
         }
-        updates[`players/${k}/hand`] = tpHand;
-        logParts.push(`${tp?.name||'?'}から${n}枚`);
+        updates['players/' + k + '/hand'] = tpHand;
+        logParts.push((tp?.name||'?') + 'から' + n + '枚');
       }
-      updates[`players/${myPlayerId}/hand`] = myHandNow;
+      updates['players/' + myPlayerId + '/hand'] = myHandNow;
       await roomRef.update(updates);
-      await addLog(`${myP.name} が電力徴収：${logParts.join('・')}`, 'warn');
+      await addLog(myP.name + ' が電力徴収：' + logParts.join('・'), 'warn');
       await advanceActionQueue();
       closeModal('action-modal');
     });
@@ -1484,8 +1609,10 @@ function openConsumeModal() {
     const fullCards = myHand.filter(c=>c.type==='full');
     content.innerHTML = `<p style="color:var(--danger);">あなたは停止状態です。</p>
       <p>フル電池3枚を消費することで再起動できます。<br>現在のフル電池：${fullCards.length}枚</p>`;
+    const restartBtnArea = document.createElement('div');
+    restartBtnArea.style.cssText='display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;';
     if(fullCards.length >= 3) {
-      addModalBtn(content,'RESTART (フル電池3枚消費)','btn-success',async()=>{
+      addModalBtn(restartBtnArea,'RESTART (フル電池3枚消費)','btn-success',async()=>{
         const snap = await roomRef.once('value');
         const room = snap.val();
         let hand = [...(room.players[myPlayerId]?.hand||[])];
@@ -1503,13 +1630,18 @@ function openConsumeModal() {
         await advanceConsumeQueue();
         closeModal('consume-modal');
       });
+    } else {
+      const noFull = document.createElement('p');
+      noFull.style.cssText='color:var(--muted); font-size:12px; margin-top:8px;';
+      noFull.textContent = `フル電池が${fullCards.length}枚しかないため再起動できません。`;
+      content.appendChild(noFull);
     }
-    content.innerHTML += '<br>';
-    addModalBtn(content,'再起動しない（スキップ）','',async()=>{
+    addModalBtn(restartBtnArea,'再起動しない（スキップ）','',async()=>{
       await addLog(`${myP.name} は再起動せず。`);
       await advanceConsumeQueue();
       closeModal('consume-modal');
     });
+    content.appendChild(restartBtnArea);
   } else {
     // Normal consume
     content.innerHTML = `<p>手札からフル電池カード1枚を消費してください。<br>出せない場合は空電池またはウィルスカードを出して電池切れ状態になります。</p>`;
@@ -1697,8 +1829,10 @@ async function sendChat() {
   const inp = document.getElementById('g-chat-inp');
   const msg = inp.value.trim();
   if(!msg) return;
+  if(!roomRef) { toast('ゲーム参加後に送信できます','warn'); return; }
   const myP = GS?.players?.[myPlayerId];
-  await roomRef.child('chat').push({ name: myP?.name||'?', msg, ts: Date.now() });
+  const name = myP?.name || document.getElementById('lobby-myname')?.value || '?';
+  await roomRef.child('chat').push({ name, msg, ts: Date.now() });
   inp.value = '';
 }
 
