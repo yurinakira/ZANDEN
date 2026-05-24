@@ -55,8 +55,6 @@ h1,h2,h3,.mono { font-family:'Orbitron',monospace; }
 .title-sub { font-size:clamp(10px,2vw,18px); letter-spacing:0.5em; color:var(--text2); margin-top:8px; }
 
 /* FIREBASE CONFIG SECTION */
-.config-card { background:var(--bg2); border:1px solid rgba(255,170,0,0.4); padding:24px; margin:20px 0; max-width:600px; width:100%; }
-.config-card h3 { color:var(--warn); font-size:13px; letter-spacing:0.2em; margin-bottom:16px; }
 .config-field { margin-bottom:12px; }
 .config-field label { display:block; font-size:11px; color:var(--text2); letter-spacing:0.15em; margin-bottom:5px; }
 .config-field input { width:100%; background:var(--bg3); border:1px solid var(--muted); color:var(--text); padding:8px 12px; font-size:13px; font-family:'Noto Sans JP',sans-serif; outline:none; }
@@ -246,45 +244,11 @@ input[type=number]:focus { border-color:var(--accent); }
   <div class="title-main">残電</div>
   <div class="title-sub">Z A N D E N — ONLINE</div>
 
-  <!-- Firebase Config -->
-  <div class="config-card">
-    <h3>⚙ FIREBASE CONFIGURATION</h3>
-    <p style="font-size:12px; color:var(--text2); margin-bottom:14px; line-height:1.8;">
-      初回のみFirebaseプロジェクトの設定を入力してください。<br>
-      一度入力するとブラウザに保存されます。
-    </p>
-    <div class="config-field">
-      <label>API KEY</label>
-      <input type="text" id="cfg-apikey" placeholder="AIzaSy...">
-    </div>
-    <div class="config-field">
-      <label>DATABASE URL</label>
-      <input type="text" id="cfg-dburl" placeholder="https://your-project-default-rtdb.firebaseio.com">
-    </div>
-    <div class="config-field">
-      <label>PROJECT ID</label>
-      <input type="text" id="cfg-projid" placeholder="your-project-id">
-    </div>
-    <details style="margin-top:12px;">
-      <summary style="font-size:11px; color:var(--accent2); cursor:pointer; letter-spacing:0.1em;">Firebaseの設定方法を見る</summary>
-      <div class="config-hint" style="margin-top:10px;">
-        <span style="color:var(--accent);">① </span>Firebase Console (console.firebase.google.com) にアクセス<br>
-        <span style="color:var(--accent);">② </span>「プロジェクトを追加」→ 名前を入力（例: zanden-game）<br>
-        <span style="color:var(--accent);">③ </span>「Realtime Database」を作成 → テストモードで開始<br>
-        <span style="color:var(--accent);">④ </span>プロジェクト設定 → マイアプリ → ウェブアプリを追加<br>
-        <span style="color:var(--accent);">⑤ </span>表示されたfirebaseConfigの値をここに入力<br>
-        <br>
-        <span style="color:var(--warn);">※ 無料プラン(Spark)で十分動作します</span>
-      </div>
-    </details>
-    <div style="margin-top:14px; text-align:center;">
-      <button class="btn btn-sm" onclick="saveConfig()">SAVE CONFIG</button>
-    </div>
+  <div style="font-size:12px; color:var(--text2); line-height:2; margin:20px 0 24px; max-width:400px; text-align:center;">
+    機械文明に残された最後の電力――<br>誰を生かし、誰を停止させるのか。
   </div>
 
-  <div id="config-status" style="font-size:11px; color:var(--muted); margin-bottom:16px;"></div>
-
-  <div id="title-btns" style="display:none;">
+  <div id="title-btns">
     <button class="btn" onclick="showCreateRoom()">CREATE ROOM</button>
     <button class="btn" onclick="showJoinRoom()">JOIN ROOM</button>
     <button class="btn btn-sm" onclick="openModal('rules-modal')">RULES</button>
@@ -566,53 +530,25 @@ let myHand = []; // my own hand (stored locally + in DB under players/{id}/hand)
 // ============================================================
 // FIREBASE INIT
 // ============================================================
-function loadConfig() {
-  const k = localStorage.getItem('zanden_cfg');
-  if(!k) return null;
-  try { return JSON.parse(k); } catch(e) { return null; }
-}
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBx8dBS7TNMO1QT2iGFhGpJoag5sTEWKns",
+  databaseURL: "https://zanden-game-default-rtdb.firebaseio.com",
+  projectId: "zanden-game",
+};
 
-function saveConfig() {
-  const cfg = {
-    apiKey: document.getElementById('cfg-apikey').value.trim(),
-    databaseURL: document.getElementById('cfg-dburl').value.trim(),
-    projectId: document.getElementById('cfg-projid').value.trim(),
-  };
-  if(!cfg.apiKey || !cfg.databaseURL || !cfg.projectId) {
-    toast('全ての項目を入力してください','warn'); return;
-  }
-  localStorage.setItem('zanden_cfg', JSON.stringify(cfg));
-  initFirebase(cfg);
-  toast('設定を保存しました');
-}
-
-function initFirebase(cfg) {
+function initFirebase() {
   try {
     if(firebase.apps.length) firebase.app().delete();
-    firebase.initializeApp({
-      apiKey: cfg.apiKey,
-      databaseURL: cfg.databaseURL,
-      projectId: cfg.projectId,
-    });
+    firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.database();
-    document.getElementById('config-status').textContent = '✓ Firebase接続済み: ' + cfg.projectId;
-    document.getElementById('config-status').style.color = 'var(--accent2)';
     document.getElementById('title-btns').style.display = 'block';
-    toast('接続成功！');
   } catch(e) {
-    document.getElementById('config-status').textContent = '✗ 接続エラー: ' + e.message;
-    document.getElementById('config-status').style.color = 'var(--danger)';
+    alert('Firebase接続エラー: ' + e.message);
   }
 }
 
 window.onload = () => {
-  const cfg = loadConfig();
-  if(cfg) {
-    document.getElementById('cfg-apikey').value = cfg.apiKey || '';
-    document.getElementById('cfg-dburl').value = cfg.databaseURL || '';
-    document.getElementById('cfg-projid').value = cfg.projectId || '';
-    initFirebase(cfg);
-  }
+  initFirebase();
 };
 
 // ============================================================
@@ -624,13 +560,11 @@ function goTo(id) {
 }
 
 function showCreateRoom() {
-  if(!db) { toast('先にFirebase設定を保存してください','warn'); return; }
   document.getElementById('create-form').style.display = 'block';
   document.getElementById('join-form').style.display = 'none';
   document.getElementById('title-btns').style.display = 'none';
 }
 function showJoinRoom() {
-  if(!db) { toast('先にFirebase設定を保存してください','warn'); return; }
   document.getElementById('join-form').style.display = 'block';
   document.getElementById('create-form').style.display = 'none';
   document.getElementById('title-btns').style.display = 'none';
