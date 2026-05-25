@@ -995,9 +995,17 @@ function renderActionCards() {
   });
 }
 
+// Firebase の push() はランダム文字列キーのオブジェクトを返すため、
+// 配列とオブジェクトの両方を時系列順の配列に変換する
+function fbArr(raw) {
+  if(!raw) return [];
+  if(Array.isArray(raw)) return raw.filter(Boolean);
+  return Object.entries(raw).sort(([a],[b]) => a < b ? -1 : 1).map(([,v]) => v);
+}
+
 function renderLog() {
   const logEl = document.getElementById('g-log');
-  const entries = GS.log || [];
+  const entries = fbArr(GS.log);
   const last = parseInt(logEl.dataset.last || 0);
   if(entries.length === last) return;
   logEl.innerHTML = '';
@@ -1012,7 +1020,7 @@ function renderLog() {
 
 function renderChat() {
   const chatEl = document.getElementById('g-chat');
-  const msgs = GS.chat || [];
+  const msgs = fbArr(GS.chat);
   const last = parseInt(chatEl.dataset.last || 0);
   if(msgs.length === last) return;
   const newMsgs = msgs.slice(last);

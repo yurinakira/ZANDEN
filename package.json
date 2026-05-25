@@ -1,0 +1,28 @@
+{
+  "name": "zanden",
+  "version": "1.0.0",
+  "description": "https://yurinakira.github.io/ZANDEN/",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "serve": "serve . -p 3000"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yurinakira/ZANDEN.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/yurinakira/ZANDEN/issues"
+  },
+  "homepage": "https://github.com/yurinakira/ZANDEN#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.9.1",
+    "serve": "^14.2.6",
+    "typescript": "^6.0.3"
+  }
+}
