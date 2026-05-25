@@ -108,6 +108,7 @@ h1,h2,h3,.mono { font-family:'Orbitron',monospace; }
 .player-card { background:var(--bg2); border:1px solid var(--muted); padding:14px; transition:all 0.3s; position:relative; }
 .player-card.leader { border-color:var(--warn); box-shadow:0 0 20px rgba(255,170,0,0.25); }
 .player-card.shutdown { border-color:var(--danger); background:rgba(255,58,58,0.04); opacity:0.75; }
+.player-card.eliminated { border-color:var(--muted); background:rgba(80,80,80,0.04); opacity:0.45; }
 .player-card.isMe { border-color:var(--accent2); }
 .leader-badge { position:absolute; top:-1px; right:-1px; background:var(--warn); color:#000; font-family:'Orbitron',monospace; font-size:9px; padding:3px 8px; letter-spacing:0.15em; }
 .me-badge { position:absolute; top:-1px; left:-1px; background:var(--accent2); color:#000; font-family:'Orbitron',monospace; font-size:9px; padding:3px 8px; }
@@ -116,6 +117,7 @@ h1,h2,h3,.mono { font-family:'Orbitron',monospace; }
 .status-ind { font-family:'Orbitron',monospace; font-size:10px; padding:3px 10px; letter-spacing:0.1em; display:inline-block; margin-bottom:7px; }
 .s-active { border:1px solid var(--accent2); color:var(--accent2); }
 .s-shutdown { border:1px solid var(--danger); color:var(--danger); }
+.s-eliminated { border:1px solid var(--muted); color:var(--muted); }
 .hand-disp { font-size:11px; color:var(--text2); }
 .full-b { color:var(--accent2); } .empty-b { color:var(--muted); } .virus-b { color:var(--danger); }
 
@@ -243,6 +245,7 @@ input[type=number]:focus { border-color:var(--accent); }
   <div class="title-circuit"></div>
   <div class="title-main">残電</div>
   <div class="title-sub">Z A N D E N — ONLINE</div>
+  <div style="font-family:'Orbitron',monospace; font-size:11px; color:var(--muted); letter-spacing:0.2em; margin-top:6px;">v0.9.0</div>
 
   <div style="font-size:12px; color:var(--text2); line-height:2; margin:20px 0 24px; max-width:400px; text-align:center;">
     機械文明に残された最後の電力――<br>誰を生かし、誰を停止させるのか。
@@ -804,6 +807,7 @@ async function hostStartGame() {
     // Ensure charIdx assigned
     if(players[k].charIdx < 0) updates[`players/${k}/charIdx`] = i % CHARACTERS.length;
     updates[`players/${k}/leaderCount`] = 0;
+    updates[`players/${k}/shutdownTurns`] = 0;
   });
 
   const leaderIdx = Math.floor(Math.random() * keys.length);
@@ -919,28 +923,37 @@ function renderPlayers() {
     const p = GS.players[k];
     const isLeader = i === GS.leaderIdx;
     const isShutdown = p.status === 'shutdown';
+    const isEliminated = p.status === 'eliminated';
     const isMe = k === myPlayerId;
     const card = document.createElement('div');
-    card.className = 'player-card' + (isLeader?' leader':'') + (isShutdown?' shutdown':'') + (isMe?' isMe':'');
+    card.className = 'player-card'
+      + (isLeader&&!isEliminated?' leader':'')
+      + (isShutdown?' shutdown':'')
+      + (isEliminated?' eliminated':'')
+      + (isMe?' isMe':'');
     const hand = p.hand || [];
     let fullC, emptyC, virusC;
-    if(isMe) {
+    if(isMe && !isEliminated) {
       fullC = myHand.filter(c=>c.type==='full').length;
       emptyC = myHand.filter(c=>c.type==='empty').length;
       virusC = myHand.filter(c=>c.type==='virus').length;
     } else {
-      // Other players: show total only (hidden hand)
       fullC = '?'; emptyC = '?'; virusC = 0;
     }
+    const statusCls = isEliminated ? 's-eliminated' : isShutdown ? 's-shutdown' : 's-active';
+    const statusLabel = isEliminated ? 'ELIMINATED' : isShutdown ? 'SHUTDOWN' : 'ACTIVE';
     card.innerHTML = `
-      ${isLeader?'<div class="leader-badge">LEADER</div>':''}
+      ${isLeader&&!isEliminated?'<div class="leader-badge">LEADER</div>':''}
       ${isMe?'<div class="me-badge">YOU</div>':''}
       <div class="pc-name">${esc(p.name)}</div>
       <div class="pc-char">${CHARACTERS[p.charIdx]||'?'}</div>
-      <span class="status-ind ${isShutdown?'s-shutdown':'s-active'}">${isShutdown?'SHUTDOWN':'ACTIVE'}</span>
+      <span class="status-ind ${statusCls}">${statusLabel}</span>
       <div class="hand-disp">
-        ${isMe?`<span class="full-b">⚡×${fullC}</span> <span class="empty-b">□×${emptyC}</span> ${virusC>0?`<span class="virus-b">☠×${virusC}</span>`:''}`
-              :`<span style="color:var(--muted)">手札${hand.length}枚</span>`}
+        ${isEliminated
+          ? `<span style="color:var(--muted); font-size:10px;">OUT</span>`
+          : isMe
+            ? `<span class="full-b">⚡×${fullC}</span> <span class="empty-b">□×${emptyC}</span> ${virusC>0?`<span class="virus-b">☠×${virusC}</span>`:''}`
+            : `<span style="color:var(--muted)">手札${hand.length}枚</span>`}
       </div>`;
     grid.appendChild(card);
   });
@@ -1065,11 +1078,22 @@ function renderPhaseUI() {
   const amLeader = leaderKey === myPlayerId;
   const myP = GS.players[myPlayerId];
   const isShutdown = myP?.status === 'shutdown';
+  const isEliminated = myP?.status === 'eliminated';
 
   const pb = document.getElementById('g-phase-box');
   const ctrl = document.getElementById('g-controls');
   ctrl.innerHTML = '';
   closeModal('wait-modal');
+
+  // 脱落プレイヤーは観戦のみ（チャットは使用可）
+  if(isEliminated) {
+    pb.className = 'phase-box';
+    pb.innerHTML = `<strong>ELIMINATED</strong><br>
+      あなたは脱落しました。観戦モードです。チャットは引き続き使用できます。`;
+    document.getElementById('g-hand-area').style.display = 'none';
+    document.getElementById('g-action-area').style.display = 'none';
+    return;
+  }
 
   if(phase === 1) {
     // Leader prep
@@ -1191,8 +1215,8 @@ function addBtn(ctrl, label, cls, extra, fn) {
 // HOST PHASE ADVANCES
 // ============================================================
 async function hostAdvancePhase2() {
-  // Draw actions
-  const n = sortedPlayerKeys(GS.players).length;
+  // Draw actions — eliminated players don't get cards
+  const n = sortedPlayerKeys(GS.players).filter(k => GS.players[k].status !== 'eliminated').length;
   let deck = [...(GS.actionDeck || ['電池生産','電池散策','電力支援','電力徴収','再生産'])];
   if(n>=6 && !deck.includes('電池散策')) deck.push('電池散策');
   shuffleArr(deck);
@@ -1253,7 +1277,9 @@ function openDistributeModal() {
   const rowsDiv = document.getElementById('dist-rows');
   rowsDiv.innerHTML = '';
   distributeSelections = {};
-  keys.forEach((k,i) => {
+  const activeKeys = keys.filter(k => GS.players[k].status !== 'eliminated');
+  activeKeys.forEach((k, ai) => {
+    const i = keys.indexOf(k);
     const p = GS.players[k];
     const row = document.createElement('div');
     row.className = 'dist-card';
@@ -1262,15 +1288,15 @@ function openDistributeModal() {
     nameEl.textContent = p.name + (k===myPlayerId?' [YOU]':'') + (i===GS.leaderIdx?' [LEADER]':'');
     const sel = document.createElement('select');
     sel.className = 'dist-sel';
-    drawnActions.forEach((a,ai) => {
+    drawnActions.forEach((a,di) => {
       const opt = document.createElement('option');
-      opt.value = ai;
+      opt.value = di;
       opt.textContent = a.type;
       sel.appendChild(opt);
     });
-    sel.value = i < drawnActions.length ? i : 0;
+    sel.value = ai < drawnActions.length ? ai : 0;
     sel.onchange = () => { distributeSelections[i] = parseInt(sel.value); };
-    distributeSelections[i] = i < drawnActions.length ? i : 0;
+    distributeSelections[i] = ai < drawnActions.length ? ai : 0;
     row.appendChild(nameEl);
     row.appendChild(sel);
     rowsDiv.appendChild(row);
@@ -1300,14 +1326,18 @@ async function confirmDistribute() {
 
   const assignments = {};
   keys.forEach((_,i) => {
+    if(GS.players[keys[i]]?.status === 'eliminated') return;
     const idx = distributeSelections[i] !== undefined ? distributeSelections[i] : 0;
     assignments[i] = drawnActions[idx] || drawnActions[0] || {type:'電池散策'};
   });
 
-  // リーダーから時計回りの順番でキューを構成
+  // リーダーから時計回り、eliminatedはスキップ
   const n = keys.length;
   const aq = [];
-  for(let i=0;i<n;i++) aq.push((GS.leaderIdx + i) % n);
+  for(let i=0;i<n;i++) {
+    const idx = (GS.leaderIdx + i) % n;
+    if(GS.players[keys[idx]]?.status !== 'eliminated') aq.push(idx);
+  }
   await roomRef.update({ phase:6, assignments, actionQueue:aq, actionQueueIdx:0 });
   await addLog('リーダーがアクションカードを配布しました。', 'important');
   closeModal('dist-modal');
@@ -1622,7 +1652,7 @@ async function advanceActionQueue() {
 // ============================================================
 async function startPhase7() {
   const keys = sortedPlayerKeys(GS.players);
-  const consumeQueue = keys; // all players
+  const consumeQueue = keys.filter(k => GS.players[k].status !== 'eliminated');
   await roomRef.update({ phase:7, consumeQueue, consumeQueueIdx:0 });
   await addLog('Phase7: 電力消費フェーズ開始。', 'important');
 }
@@ -1747,22 +1777,58 @@ async function checkEndCondition() {
   const keys = sortedPlayerKeys(room.players);
   const n = keys.length;
   const requiredLeaderTurns = n <= 4 ? 2 : 1;
+  // 脱落閾値：4人以下=2ターン、5人以上=3ターン
+  const elimThreshold = n <= 4 ? 2 : 3;
 
-  // Update leader count
-  const leaderKey = keys[room.leaderIdx];
-  const newLeaderCount = (room.players[leaderKey]?.leaderCount||0)+1;
   const updates = {};
-  updates[`players/${leaderKey}/leaderCount`] = newLeaderCount;
 
+  // shutdownTurns をカウントアップし、閾値超過で eliminated に
+  const newlyEliminated = [];
+  keys.forEach(k => {
+    const p = room.players[k];
+    if(p.status === 'shutdown') {
+      const t = (p.shutdownTurns || 0) + 1;
+      updates[`players/${k}/shutdownTurns`] = t;
+      if(t >= elimThreshold) {
+        updates[`players/${k}/status`] = 'eliminated';
+        newlyEliminated.push(p.name);
+      }
+    } else if(p.status === 'active') {
+      updates[`players/${k}/shutdownTurns`] = 0;
+    }
+  });
+
+  // リーダーのターン数を更新
+  const leaderKey = keys[room.leaderIdx];
+  updates[`players/${leaderKey}/leaderCount`] = (room.players[leaderKey]?.leaderCount||0)+1;
   const leaderCounts = {...(room.leaderCounts||{})};
   leaderCounts[room.leaderIdx] = (leaderCounts[room.leaderIdx]||0)+1;
   updates.leaderCounts = leaderCounts;
+
   await roomRef.update(updates);
+
+  // 脱落ログ
+  for(const name of newlyEliminated) {
+    await addLog(`${name} が電池切れ${elimThreshold}ターン継続 → 脱落！`, 'danger');
+  }
 
   // Re-fetch
   const snap2 = await roomRef.once('value');
   const room2 = snap2.val();
-  const allDone = Object.values(room2.leaderCounts||{}).every(c=>c>=requiredLeaderTurns);
+
+  // 脱落チェック後の非脱落プレイヤー
+  const activeKeys = keys.filter(k => room2.players[k]?.status !== 'eliminated');
+
+  // 非脱落が1人以下 → ゲーム終了
+  if(activeKeys.length <= 1) {
+    await addLog('脱落により残りプレイヤーが1人以下になりました。ゲーム終了！', 'important');
+    await roomRef.update({ status:'ended', endReason:'脱落によりゲーム終了。' });
+    return;
+  }
+
+  // 非脱落プレイヤーの全員が必要リーダー回数を達成したか
+  const nonEliminatedIdxs = keys.map((k,i)=>({k,i})).filter(({k})=>room2.players[k]?.status!=='eliminated').map(({i})=>i);
+  const allDone = nonEliminatedIdxs.every(i=>(room2.leaderCounts[i]||0)>=requiredLeaderTurns);
 
   if(allDone) {
     await addLog(`全員が${requiredLeaderTurns}回リーダーを担当しました。ゲーム終了！`, 'important');
@@ -1775,8 +1841,14 @@ async function checkEndCondition() {
     return;
   }
 
-  // Next turn
-  const nextLeaderIdx = (room2.leaderIdx+1) % keys.length;
+  // 次のリーダー（eliminatedをスキップ）
+  let nextLeaderIdx = (room2.leaderIdx + 1) % keys.length;
+  let safetyCounter = 0;
+  while(room2.players[keys[nextLeaderIdx]]?.status === 'eliminated') {
+    nextLeaderIdx = (nextLeaderIdx + 1) % keys.length;
+    if(++safetyCounter >= keys.length) break;
+  }
+
   const nextTurn = (room2.turn||1)+1;
   await addLog(`--- ターン${nextTurn} 開始。リーダー：${room2.players[keys[nextLeaderIdx]]?.name} ---`, 'important');
   await roomRef.update({
