@@ -966,15 +966,34 @@ function renderActionCards() {
   const area = document.getElementById('g-action-area');
   const assignments = GS.assignments || {};
   const hasAssignments = Object.keys(assignments).length > 0;
-  if(!hasAssignments) { area.style.display='none'; return; }
+  const drawn = GS.drawnActions || [];
+  const phase = GS.phase;
+  const keys = sortedPlayerKeys(GS.players);
+  const amLeader = keys[GS.leaderIdx] === myPlayerId;
+
+  // Phase2〜4 のリーダーには引いたアクションカードを表示
+  const showDrawn = drawn.length > 0 && phase >= 2 && phase <= 4 && amLeader;
+
+  if(!hasAssignments && !showDrawn) { area.style.display='none'; return; }
   area.style.display='block';
 
   const title = document.getElementById('g-action-title');
   const row = document.getElementById('g-action-cards');
   row.innerHTML = '';
 
-  const keys = sortedPlayerKeys(GS.players);
-  const isPhase6or7 = GS.phase >= 6;
+  if(showDrawn && !hasAssignments) {
+    title.textContent = 'DRAWN ACTIONS — LEADER ONLY';
+    drawn.forEach(ac => {
+      const card = document.createElement('div');
+      card.className = 'ac-card me-card';
+      card.innerHTML = `<div class="ac-name">${ac.type}</div>
+        <div class="ac-desc">${ACTION_DESC[ac.type]||''}</div>`;
+      row.appendChild(card);
+    });
+    return;
+  }
+
+  const isPhase6or7 = phase >= 6;
   title.textContent = isPhase6or7 ? 'ACTION EXECUTION' : 'ASSIGNED CARDS';
 
   keys.forEach((k,i) => {
@@ -1125,11 +1144,13 @@ function renderPhaseUI() {
         ${ACTION_DESC[myAc?.type]||''}`;
       addBtn(ctrl,'アクションを実行する','btn-success','',()=>openActionModal());
     } else {
+      const curAc = assignments[curPIdx];
       pb.className = 'phase-box';
       pb.innerHTML = `<strong>PHASE 6: アクション実行中</strong><br>
-        現在：<span style="color:var(--accent);">${esc(curP?.name||'?')}</span> のターン<br>
-        あなたのアクション：<span style="color:var(--accent2);">${myAc?.type||'?'}</span>`;
-      setWait(`${curP?.name||'?'} がアクションを実行中...`);
+        現在：<span style="color:var(--accent);">${esc(curP?.name||'?')}</span>
+        のターン（<span style="color:var(--accent2);">${curAc?.type||'?'}</span>）<br>
+        あなたのアクション：<span style="color:var(--accent2);">${myAc?.type||'?'}</span><br>
+        <span class="connecting" style="font-size:11px;">WAITING... 結果はログに表示されます</span>`;
     }
   }
   else if(phase === 7) {
@@ -1147,8 +1168,8 @@ function renderPhaseUI() {
     } else {
       pb.className = 'phase-box';
       pb.innerHTML = `<strong>PHASE 7: 電力消費判定</strong><br>
-        現在：<span style="color:var(--danger);">${esc(curP?.name||'?')}</span> の消費番`;
-      setWait(`${curP?.name||'?'} が電力消費を処理中...`);
+        現在：<span style="color:var(--danger);">${esc(curP?.name||'?')}</span> の消費番<br>
+        <span class="connecting" style="font-size:11px;">WAITING... 結果はログに表示されます</span>`;
     }
   }
 }
