@@ -122,10 +122,10 @@ test.describe('シナリオ2：ゲーム開始', () => {
         await expect(handCards).toHaveCount(2, { timeout: 15000 });
       }
 
-      // デッキ残数が34枚（42 - 4×2）であることを確認
+      // デッキ残数が35枚（43 - 4×2）であることを確認（腐電核追加でデッキ43枚）
       const deckCount = await pages[0].waitForSelector('#g-deck');
       const deckText = await deckCount.textContent();
-      expect(parseInt(deckText ?? '0')).toBe(34);
+      expect(parseInt(deckText ?? '0')).toBe(35);
     } finally {
       for (const ctx of contexts) await ctx.close();
     }
